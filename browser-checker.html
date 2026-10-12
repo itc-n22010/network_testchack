@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C9200CX ブラウザーチェック</title>
+<style>
+:root{font-family:"Yu Gothic UI","Meiryo",sans-serif;color:#1f2937;background:#f1f5f9}
+*{box-sizing:border-box}
+body{margin:0;padding:24px}
+main{max-width:1180px;margin:auto}
+h1{font-size:27px;margin:0 0 6px}
+h2{font-size:18px;margin:0 0 14px}
+p{line-height:1.6}
+.muted{color:#64748b}
+.panel{background:#fff;border:1px solid #dbe3ec;border-radius:12px;padding:20px;margin:18px 0}
+.setup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+label{display:block;font-weight:600;font-size:14px}
+label small{display:block;color:#64748b;font-weight:400;margin-top:4px}
+input[type=file],input[type=text],input[type=date],textarea,select{font:inherit;width:100%;margin-top:7px;padding:9px 10px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}
+textarea{min-height:112px;resize:vertical}
+.full{grid-column:1/-1}
+.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}
+button{font:inherit;cursor:pointer;border-radius:7px;padding:9px 14px}
+.primary{border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-weight:700}
+.primary:disabled{opacity:.5;cursor:not-allowed}
+.secondary{border:1px solid #cbd5e1;background:#fff;color:#334155}
+.note{padding:11px 13px;background:#eff6ff;border-radius:7px;color:#1e40af;font-size:13px;margin-top:12px}
+.error{padding:11px 13px;background:#fef2f2;border:1px solid #fecaca;border-radius:7px;color:#991b1b;margin-top:12px}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.metric{border:1px solid #e2e8f0;border-radius:9px;padding:14px}
+.metric span{display:block;color:#64748b;font-size:12px}
+.metric strong{display:block;font-size:24px;margin-top:3px}
+.pass-text{color:#15803d}.fail-text{color:#b91c1c}.pending-text{color:#a16207}
+.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:12px}
+.toolbar label{min-width:180px;flex:1}
+.table-wrap{overflow:auto;border:1px solid #e2e8f0;border-radius:8px}
+table{border-collapse:collapse;width:100%;background:#fff}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid #e2e8f0}
+th{background:#f8fafc;color:#475569;white-space:nowrap;font-size:12px}
+tbody tr:last-child td{border-bottom:0}
+.device-row:hover td{background:#f8fafc}
+.device-name{font-weight:700;white-space:nowrap}
+.badge{display:inline-block;padding:4px 9px;border-radius:999px;font-weight:700;font-size:12px;white-space:nowrap}
+.badge.PASS{background:#dcfce7;color:#166534}.badge.FAIL{background:#fee2e2;color:#991b1b}.badge.未設定{background:#fef3c7;color:#92400e}
+.detail{white-space:pre-wrap;line-height:1.55;min-width:360px}
+.detail-row td{background:#f8fafc}
+.hidden{display:none}
+#page-info{color:#64748b;font-size:13px}
+@media(max-width:700px){body{padding:13px}.setup-grid{grid-template-columns:1fr}.full{grid-column:auto}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{padding:15px}h1{font-size:22px}}
+@media print{body{background:#fff;padding:0}.setup-panel,.toolbar,.actions button{display:none!important}.panel{break-inside:avoid}}
+</style>
+</head>
+<body>
+<main>
+<h1>Cisco C9200CX ログチェック</h1>
+<p class="muted">対象フォルダーを一度選び、「チェック実行」を押してください。配下の logs と device-reference.csv を自動で読み込みます。ファイルはこの端末内で処理され、外部へ送信されません。</p>
+
+<section class="panel setup-panel">
+<h2>1. 対象フォルダー</h2>
+<div class="setup-grid">
+<label class="full">チェッカー・CSV・logs が入ったフォルダー
+<input id="project-input" type="file" webkitdirectory multiple>
+<small>device-reference.csv と logs フォルダーを含む親フォルダーを選択してください。</small>
+</label>
+</div>
+<div class="note">選択したフォルダー直下の <code>device-reference.csv</code>、<code>config-template.txt</code> と <code>logs/機器名/項番.txt</code> を使用します。sh runで照合する設定はテンプレートに、機器ごとの値はCSVに記載します。</div>
+<div class="actions">
+<button id="run-check" class="primary" type="button">チェック実行</button>
+<button id="export-csv" class="secondary" type="button" disabled>結果をCSV保存</button>
+<span id="file-count" class="muted" aria-live="polite"></span>
+</div>
+<div id="input-error" class="error hidden" role="alert"></div>
+</section>
+
+<section id="results" class="hidden">
+<div class="panel">
+<h2>2. 全体サマリー</h2>
+<div id="summary" class="summary"></div>
+</div>
+<div class="panel">
+<h2>3. 機器一覧・項番別結果</h2>
+<div class="toolbar">
+<label>機器を検索<input id="search" type="search" placeholder="機器名"></label>
+<label>判定<select id="status-filter"><option value="">すべて</option><option value="FAIL">不合格</option><option value="未設定">未設定あり</option><option value="PASS">合格</option></select></label>
+<label>表示件数<select id="page-size"><option value="25">25件</option><option value="50">50件</option><option value="100">100件</option></select></label>
+</div>
+<div class="table-wrap"><table><thead><tr><th>機器名</th><th>総合判定</th><th>合格</th><th>不合格</th><th>未設定</th><th>詳細</th></tr></thead>
+<tbody id="device-results"></tbody></table></div>
+<div class="actions"><span id="page-info" aria-live="polite"></span><button id="previous-page" class="secondary" type="button">前へ</button><button id="next-page" class="secondary" type="button">次へ</button></div>
+</div>
+</section>
+</main>
+<script>
+(() => {
+  'use strict';
+  const testIds = ['002-001', '002-002', '003-002', '003-003', '003-004', '003-005'];
+  const testIdPattern = testIds.join('|');
+  const expectedCommands = {
+    '002-001': 'show running-config',
+    '002-002': 'show startup-config',
+    '003-002': 'show logging',
+    '003-003': 'show inventory',
+    '003-004': 'show environment all',
+    '003-005': 'show license all'
+  };
+  const commandSequence = ['terminal length 0', 'show clock'];
+  const projectInput = document.getElementById('project-input');
+  const errorBox = document.getElementById('input-error');
+  const resultsSection = document.getElementById('results');
+  const resultsBody = document.getElementById('device-results');
+  const summary = document.getElementById('summary');
+  const searchInput = document.getElementById('search');
+  const statusFilter = document.getElementById('status-filter');
+  const pageSizeInput = document.getElementById('page-size');
+  const pageInfo = document.getElementById('page-info');
+  const previousButton = document.getElementById('previous-page');
+  const nextButton = document.getElementById('next-page');
+  const exportButton = document.getElementById('export-csv');
+  let deviceResults = [];
+  let currentPage = 1;
+
+  function fileMap(input) {
+    return new Map(Array.from(input.files, file => [file.webkitRelativePath || file.name, file]));
+  }
+
+  function findFile(files, suffix) {
+    const matches = Array.from(files.entries()).filter(([path]) =>
+      path.replace(/\\/g, '/').toLowerCase().endsWith(suffix.toLowerCase())
+    );
+    if (matches.length === 0) return null;
+    matches.sort((left, right) => left[0].length - right[0].length);
+    return matches[0][1];
+  }
+
+  function findRootFile(files, fileName) {
+    const matches = Array.from(files.entries()).filter(([path]) => {
+      const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
+      return parts.length === 2 && parts[1].toLowerCase() === fileName.toLowerCase();
+    });
+    if (matches.length !== 1) {
+      throw new Error(matches.length === 0
+        ? '選択したフォルダー直下に ' + fileName + ' がありません。browser-checker.html、device-reference.csv、logs が入った親フォルダーを選択してください。'
+        : '対象フォルダー直下に ' + fileName + ' が複数あります。');
+    }
+    return matches[0][1];
+  }
+
+  function findLogFile(files, deviceName, testId) {
+    const escapedDevice = deviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+      '(?:^|/)logs/' + escapedDevice + '/' + testId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\.txt$',
+      'i'
+    );
+    const matches = Array.from(files.entries()).filter(([path]) =>
+      pattern.test(path.replace(/\\/g, '/'))
+    );
+    if (matches.length > 1) {
+      throw new Error(testId + ' のログが複数あります。重複ファイルを確認してください。');
+    }
+    return matches.length === 1 ? matches[0][1] : null;
+  }
+
+  function decode(bytes) {
+    return new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
+  }
+
+  async function textFile(file) {
+    return decode(await file.arrayBuffer());
+  }
+
+  function addResult(list, testId, status, detail) {
+    list.push({ testId, status, detail });
+  }
+
+  function overallStatus(checks) {
+    if (checks.length === 0 || checks.some(check => check.status === 'FAIL')) return 'FAIL';
+    if (checks.some(check => check.status === '未設定')) return '未設定';
+    return 'PASS';
+  }
+
+  function configBody(text) {
+    const lines = text.split(/\r?\n/);
+    const start = lines.findIndex(line => /^\s*version\s+\S+/.test(line));
+    const end = start < 0 ? -1 : lines.findIndex((line, index) => index >= start && /^\s*end\s*$/.test(line));
+    if (start < 0 || end < start) throw new Error('設定本文（version から end）が見つかりません。');
+    return lines.slice(start, end + 1).map(line => line.trimEnd());
+  }
+
+  function comparableConfig(lines) {
+    return lines.map(line => line.trim()).filter(line => line && !line.startsWith('!'));
+  }
+
+  function compareLines(expectedLines, actualLines) {
+    const counts = new Map();
+    for (const line of actualLines) {
+      const key = line.toLocaleLowerCase();
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const missing = [];
+    for (const line of expectedLines) {
+      const key = line.toLocaleLowerCase();
+      const count = counts.get(key) || 0;
+      if (count === 0) missing.push(line);
+      else counts.set(key, count - 1);
+    }
+    const unexpected = [];
+    for (const [key, count] of counts) {
+      if (count > 0) {
+        const example = actualLines.find(line => line.toLocaleLowerCase() === key);
+        for (let index = 0; index < count; index++) unexpected.push(example);
+      }
+    }
+    return { missing, unexpected };
+  }
+
+  function commandLinePosition(text, command, afterPosition) {
+    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp('^[^\\r\\n#]+#\\s*' + escapedCommand + '\\s*$', 'gim');
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match.index > afterPosition) return match.index;
+    }
+    return -1;
+  }
+
+  function hasValidCalendarDate(value) {
+    const validDate = (year, month, day) => {
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day;
+    };
+    const patterns = [
+      /\b((?:19|20)\d{2})[-/](\d{1,2})[-/](\d{1,2})(?=$|[\sT])/gi,
+      /\b(\d{1,2})\/(\d{1,2})\/((?:19|20)\d{2})\b/g,
+      /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*)\s+(\d{1,2}),?\s+((?:19|20)\d{2})\b/gi,
+      /\b(\d{1,2})[\s-]+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*)[\s,-]+((?:19|20)\d{2})\b/gi
+    ];
+    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    for (const [index, pattern] of patterns.entries()) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(value)) !== null) {
+        if (index === 0) {
+          if (validDate(Number(match[1]), Number(match[2]), Number(match[3]))) return true;
+        } else if (index === 1) {
+          const first = Number(match[1]);
+          const second = Number(match[2]);
+          const year = Number(match[3]);
+          if (validDate(year, first, second) || validDate(year, second, first)) return true;
+        } else if (index === 2) {
+          const month = monthNames.indexOf(match[1].slice(0, 3).toLowerCase()) + 1;
+          if (validDate(Number(match[3]), month, Number(match[2]))) return true;
+        } else {
+          const month = monthNames.indexOf(match[2].slice(0, 3).toLowerCase()) + 1;
+          if (validDate(Number(match[3]), month, Number(match[1]))) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function inventoryBlock(text) {
+    const lines = text.split(/\r?\n/);
+    for (const wanted of ['Chassis', 'Switch 1']) {
+      const start = lines.findIndex(line => /^\s*NAME:/.test(line) && line.includes(wanted));
+      if (start < 0) continue;
+      let end = start + 1;
+      while (end < lines.length && !/^\s*NAME:/.test(lines[end])) end++;
+      return lines.slice(start, end).join('\n');
+    }
+    throw new Error('Chassis または Switch 1 の在庫情報がありません。');
+  }
+
+  function componentGreen(lines, component) {
+    const start = lines.findIndex(line => line.toUpperCase().includes(component));
+    if (start < 0) return false;
+    for (let index = start; index < Math.min(start + 3, lines.length); index++) {
+      if (index > start && (/^\s*$/.test(lines[index]) || /^\s*(SYSTEM\s+|POWER\b)/i.test(lines[index]))) break;
+      if (/\bGREEN\b/i.test(lines[index])) return true;
+    }
+    return false;
+  }
+
+  function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let quoted = false;
+    for (let index = 0; index < text.length; index++) {
+      const character = text[index];
+      if (quoted) {
+        if (character === '"' && text[index + 1] === '"') {
+          field += '"';
+          index++;
+        } else if (character === '"') {
+          quoted = false;
+        } else {
+          field += character;
+        }
+      } else if (character === '"' && field.length === 0) {
+        quoted = true;
+      } else if (character === ',') {
+        row.push(field);
+        field = '';
+      } else if (character === '\n' || character === '\r') {
+        if (character === '\r' && text[index + 1] === '\n') index++;
+        row.push(field);
+        if (row.some(value => value.trim() !== '')) rows.push(row);
+        row = [];
+        field = '';
+      } else {
+        field += character;
+      }
+    }
+    if (quoted) throw new Error('CSVの引用符が閉じられていません。');
+    if (field.length || row.length) {
+      row.push(field);
+      if (row.some(value => value.trim() !== '')) rows.push(row);
+    }
+    if (rows.length < 1) throw new Error('期待値CSVにヘッダーを入力してください。');
+
+    const headers = rows[0].map(value => value.trim().replace(/^\uFEFF/, ''));
+    const normalizedHeaders = headers.map(header => header.toLowerCase());
+    const required = ['device_name', 'expected_pid', 'expected_serial'];
+    const missing = required.filter(header => !normalizedHeaders.includes(header));
+    if (missing.length) {
+      throw new Error('device-reference.csv の列が不正です。期待値CSVが必要です (' +
+        missing.join(', ') + ')。チェック結果CSVを読み込ませていないか確認してください。');
+    }
+    const duplicateHeaders = normalizedHeaders.filter((header, index) => normalizedHeaders.indexOf(header) !== index);
+    if (duplicateHeaders.length) {
+      throw new Error('device-reference.csv に重複した列名があります: ' + Array.from(new Set(duplicateHeaders)).join(', '));
+    }
+
+    const indices = Object.fromEntries(required.map(header => [header, normalizedHeaders.indexOf(header)]));
+    const variableHeaders = headers.filter((header, index) =>
+      !required.includes(normalizedHeaders[index])
+    );
+    for (const header of variableHeaders) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(header)) {
+        throw new Error('CSVの変数列名は英字または_で始まる英数字にしてください: ' + header);
+      }
+    }
+    const variableIndices = new Map(variableHeaders.map(header => [
+      header.toLowerCase(),
+      headers.indexOf(header)
+    ]));
+    const devices = new Map();
+    for (const values of rows.slice(1)) {
+      if (values.length > headers.length) throw new Error('CSVデータ行にヘッダーより多い列があります。');
+      const name = (values[indices.device_name] || '').trim();
+      if (!name) throw new Error('device_name が空の行があります。');
+      const key = name.toLocaleLowerCase();
+      const current = devices.get(key) || { name, pid: new Set(), serial: new Set(), variables: new Map() };
+      const pid = (values[indices.expected_pid] || '').trim();
+      const serial = (values[indices.expected_serial] || '').trim();
+      if (pid) current.pid.add(pid);
+      if (serial) current.serial.add(serial);
+      for (const header of variableHeaders) {
+        const variableValue = (values[headers.indexOf(header)] || '').trim();
+        if (!variableValue) continue;
+        const variableKey = header.toLowerCase();
+        const existing = current.variables.get(variableKey);
+        if (existing && existing.value !== variableValue) {
+          throw new Error(name + ' のCSV変数 ' + header + ' に複数の値があります。');
+        }
+        current.variables.set(variableKey, { name: header, value: variableValue });
+      }
+      devices.set(key, current);
+    }
+
+    for (const [key, value] of devices) {
+      const name = value.name;
+      if (value.pid.size > 1) throw new Error(name + ' の expected_pid に複数の値があります。');
+      if (value.serial.size > 1) throw new Error(name + ' の expected_serial に複数の値があります。');
+      devices.set(key, {
+        pid: Array.from(value.pid)[0] || '',
+        serial: Array.from(value.serial)[0] || '',
+        variables: value.variables
+      });
+    }
+    return { devices, variableIndices };
+  }
+
+  function expandConfigTemplate(template, expected, variableIndices) {
+    const lines = template.split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('!'));
+    return lines.map(line => {
+      const expanded = line.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (placeholder, name) => {
+        const key = name.toLowerCase();
+        if (!variableIndices.has(key)) {
+          throw new Error('テンプレートの変数 ' + name + ' がdevice-reference.csvの列にありません。');
+        }
+        const variable = expected.variables.get(key);
+        if (!variable || !variable.value) {
+          throw new Error('CSVに ' + name + ' の値がありません。');
+        }
+        return variable.value;
+      });
+      if (expanded.includes('{{') || expanded.includes('}}')) {
+        throw new Error('設定テンプレートの変数表記が不正です: ' + line);
+      }
+      return expanded;
+    });
+  }
+
+  async function runDevice(deviceName, files, expectedByDevice, template) {
+    const results = [];
+    const texts = new Map();
+    const valid = new Map();
+    const expected = expectedByDevice.devices.get(deviceName.toLocaleLowerCase()) ||
+      { variables: new Map(), pid: '', serial: '' };
+
+    for (const testId of testIds) {
+      try {
+        const file = findLogFile(files, deviceName, testId);
+        if (!file) throw new Error('ログファイルがありません: ' + testId + '.txt');
+        const log = await textFile(file);
+        const command = expectedCommands[testId];
+        const requiredCommands = [...commandSequence, command];
+        let lastPosition = -1;
+        const missingCommands = [];
+        for (const requiredCommand of requiredCommands) {
+          lastPosition = commandLinePosition(log, requiredCommand, lastPosition);
+          if (lastPosition < 0) {
+            missingCommands.push(requiredCommand);
+            break;
+          }
+        }
+        if (missingCommands.length) {
+          valid.set(testId, false);
+          addResult(results, testId, 'FAIL',
+            '必要なコマンドが順番どおりにありません: ' + requiredCommands.join(' → '));
+          continue;
+        }
+        texts.set(testId, log);
+        valid.set(testId, true);
+        addResult(results, testId, 'PASS', '項番とshowコマンドが一致 (' + command + ')');
+      } catch (error) {
+        valid.set(testId, false);
+        addResult(results, testId, 'FAIL', error.message);
+      }
+    }
+
+    if (valid.get('002-001')) {
+      try {
+        const expectedConfig = comparableConfig(expandConfigTemplate(template, expected, expectedByDevice.variableIndices));
+        if (expectedConfig.length === 0) throw new Error('config-template.txt に照合する設定がありません。');
+        const runningConfig = comparableConfig(configBody(texts.get('002-001')));
+        const missing = compareLines(expectedConfig, runningConfig).missing;
+        addResult(results, '002-001', missing.length ? 'FAIL' : 'PASS',
+          missing.length ? 'running-config にない設定: ' + missing.join(' / ') :
+            'テンプレートに記載した設定が running-config に存在します。');
+      } catch (error) {
+        addResult(results, '002-001', 'FAIL', error.message);
+      }
+    }
+
+    if (valid.get('002-001') && valid.get('002-002')) {
+      try {
+        const running = comparableConfig(configBody(texts.get('002-001')));
+        const startup = comparableConfig(configBody(texts.get('002-002')));
+        const difference = compareLines(running, startup);
+        const details = [];
+        if (difference.missing.length) details.push('startup-config にない設定: ' + difference.missing.join(' / '));
+        if (difference.unexpected.length) details.push('running-config にない設定: ' + difference.unexpected.join(' / '));
+        addResult(results, '002-002', details.length ? 'FAIL' : 'PASS',
+          details.length ? details.join('\n') : 'running-config と startup-config の設定内容が一致します。');
+      } catch (error) {
+        addResult(results, '002-002', 'FAIL', error.message);
+      }
+    } else {
+      addResult(results, '002-002', 'FAIL', 'running-config または startup-config の有効なログがありません。');
+    }
+
+    if (valid.get('003-002')) {
+      const hasError = /\b(error|failed)\b/i.test(texts.get('003-002'));
+      addResult(results, '003-002', hasError ? 'FAIL' : 'PASS',
+        hasError ? 'ログに Error または Failed の表記があります。' : 'ログに Error / Failed の表記はありません。');
+    }
+
+    if (valid.get('003-003')) {
+      if (!expected.pid) addResult(results, '003-003', '未設定', '機器管理表のPIDが入力されていません。');
+      if (!expected.serial) addResult(results, '003-003', '未設定', '機器管理表のシリアル番号が入力されていません。');
+      if (expected.pid && expected.serial) {
+        try {
+          const block = inventoryBlock(texts.get('003-003'));
+          const pid = block.match(/^\s*PID:\s*([^\s,]+)/im)?.[1] || '';
+          const serial = block.match(/^\s*PID:.*?\bSN:\s*([^\s,]+)/im)?.[1] || '';
+          addResult(results, '003-003', pid.toLowerCase() === expected.pid.toLowerCase() ? 'PASS' : 'FAIL',
+            'PID: 期待値=' + expected.pid + ' / 実際=' + (pid || '取得できません'));
+          addResult(results, '003-003', serial.toLowerCase() === expected.serial.toLowerCase() ? 'PASS' : 'FAIL',
+            'シリアル番号: 期待値=' + expected.serial + ' / 実際=' + (serial || '取得できません'));
+        } catch (error) {
+          addResult(results, '003-003', 'FAIL', error.message);
+        }
+      }
+    }
+
+    if (valid.get('003-004')) {
+      const lines = texts.get('003-004').split(/\r?\n/);
+      const labelledStates = lines.flatMap(line => {
+        const match = line.match(/\b(?:state|status)\s*(?::|=)\s*(.*?)\s*$/i);
+        return match ? [{ line, value: match[1].trim() }] : [];
+      });
+      const componentStates = lines.flatMap(line => {
+        if (!/\b(?:SYSTEM\s+INLET|SYSTEM\s+HOTSPOT|POWER\s+SUPPLY(?:\s+\d+)?|FAN(?:\s+\d+)?)\b/i.test(line)) return [];
+        const match = line.match(/\bis\s+([A-Z][A-Z -]*)\s*$/i);
+        return match ? [{ line, value: match[1].trim() }] : [];
+      });
+      const stateLines = Array.from(new Map(
+        [...labelledStates, ...componentStates].map(item => [item.line, item])
+      ).values());
+      const healthyStates = /^(?:GREEN|OK|NORMAL|ONLINE|UP|ACTIVE|READY|OPERATIONAL)\b/i;
+      const unhealthy = stateLines.filter(item => !healthyStates.test(item.value));
+      addResult(results, '003-004', stateLines.length > 0 && !unhealthy.length ? 'PASS' : 'FAIL',
+        !stateLines.length ? 'State / Status または機器状態の記載がありません。' :
+          unhealthy.length ? '正常以外の State / Status: ' + unhealthy.map(item => item.line).join(' / ') :
+            '記載されている State / Status は正常値です。');
+      for (const component of ['SYSTEM INLET', 'SYSTEM HOTSPOT']) {
+        addResult(results, '003-004', componentGreen(lines, component) ? 'PASS' : 'FAIL',
+          componentGreen(lines, component) ? component + ' が GREEN です。' : component + ' の GREEN 表記がありません。');
+      }
+      const powerOk = /^\s*(?:Switch\s+\d+:\s*)?POWER\b[^\r\n]*\b315(?:\.0+)?\s*W\b/im.test(texts.get('003-004'));
+      addResult(results, '003-004', powerOk ? 'PASS' : 'FAIL', powerOk ? 'POWER が 315W です。' : 'POWER 315W の記載がありません。');
+    }
+
+    if (valid.get('003-005')) {
+      const ack = texts.get('003-005').match(/^\s*Last ACK Received\s*:\s*(.*?)\s*$/im);
+      if (!ack) {
+        addResult(results, '003-005', 'FAIL', 'Last ACK Received の項目がありません。');
+      } else if (!ack[1].trim() || /^\s*<none>\s*$/i.test(ack[1])) {
+        addResult(results, '003-005', 'FAIL', 'Last ACK Received が未表示または <none> です。');
+      } else if (!hasValidCalendarDate(ack[1])) {
+        addResult(results, '003-005', 'FAIL', 'Last ACK Received に有効な日付がありません: ' + ack[1].trim());
+      } else {
+        addResult(results, '003-005', 'PASS', 'Last ACK Received に日付があります: ' + ack[1].trim());
+      }
+    }
+
+    const tests = testIds.map(testId => {
+      const checks = results.filter(result => result.testId === testId);
+      return { testId, status: overallStatus(checks), detail: checks.map(check => check.detail).join('\n') };
+    });
+    const pass = tests.filter(test => test.status === 'PASS').length;
+    const fail = tests.filter(test => test.status === 'FAIL').length;
+    const unconfigured = tests.filter(test => test.status === '未設定').length;
+    return { name: deviceName, status: overallStatus(tests), pass, fail, unconfigured, tests };
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[character]);
+  }
+
+  function render() {
+    const query = searchInput.value.trim().toLocaleLowerCase();
+    const selected = statusFilter.value;
+    const matching = deviceResults.filter(device =>
+      device.name.toLocaleLowerCase().includes(query) &&
+      (!selected || (selected === '未設定' ? device.unconfigured > 0 : device.status === selected))
+    );
+    const size = Number(pageSizeInput.value);
+    const pages = Math.ceil(matching.length / size);
+    currentPage = Math.min(Math.max(currentPage, 1), Math.max(pages, 1));
+    const start = (currentPage - 1) * size;
+    const pageDevices = matching.slice(start, start + size);
+    resultsBody.innerHTML = pageDevices.map((device, index) => {
+      const detailId = 'detail-' + currentPage + '-' + index;
+      const detailRows = device.tests.map(test =>
+        '<tr><td>' + escapeHtml(test.testId) + '</td><td><span class="badge ' + escapeHtml(test.status) + '">' +
+        escapeHtml(test.status) + '</span></td><td class="detail">' + escapeHtml(test.detail) + '</td></tr>'
+      ).join('');
+      return '<tr class="device-row"><td class="device-name">' + escapeHtml(device.name) +
+        '</td><td><span class="badge ' + escapeHtml(device.status) + '">' + escapeHtml(device.status) +
+        '</span></td><td class="pass-text">' + device.pass + '</td><td class="fail-text">' + device.fail +
+        '</td><td class="pending-text">' + device.unconfigured + '</td><td><button class="secondary detail-toggle" type="button" aria-expanded="false" aria-controls="' +
+        detailId + '">項番を見る</button></td></tr><tr id="' + detailId + '" class="detail-row hidden"><td colspan="6"><div class="table-wrap"><table><thead><tr><th>項番</th><th>判定</th><th>詳細</th></tr></thead><tbody>' +
+        detailRows + '</tbody></table></div></td></tr>';
+    }).join('');
+    pageInfo.textContent = matching.length
+      ? matching.length + '台中 ' + (start + 1) + '–' + Math.min(start + size, matching.length) + '台を表示'
+      : '該当する機器はありません。';
+    previousButton.disabled = currentPage <= 1;
+    nextButton.disabled = currentPage >= pages;
+  }
+
+  function showSummary() {
+    const failed = deviceResults.filter(device => device.status === 'FAIL').length;
+    const unconfigured = deviceResults.filter(device => device.unconfigured > 0).length;
+    const passed = deviceResults.filter(device => device.status === 'PASS').length;
+    const itemCounts = deviceResults.reduce((counts, device) => {
+      for (const test of device.tests) counts[test.status]++;
+      return counts;
+    }, { PASS: 0, FAIL: 0, 未設定: 0 });
+    summary.innerHTML = [
+      ['機器数', deviceResults.length, ''],
+      ['合格機器', passed, 'pass-text'],
+      ['要対応機器', failed, 'fail-text'],
+      ['未設定あり', unconfigured, 'pending-text'],
+      ['項目合格', itemCounts.PASS, 'pass-text'],
+      ['項目不合格', itemCounts.FAIL, 'fail-text'],
+      ['項目未設定', itemCounts.未設定, 'pending-text']
+    ].map(item => '<div class="metric"><span>' + escapeHtml(item[0]) + '</span><strong class="' + item[2] + '">' +
+      item[1] + '</strong></div>').join('');
+  }
+
+  projectInput.addEventListener('change', updateFileCount);
+  function updateFileCount() {
+    document.getElementById('file-count').textContent =
+      projectInput.files.length + ' ファイルを読み込み対象にしました';
+  }
+
+  document.getElementById('run-check').addEventListener('click', async () => {
+    errorBox.classList.add('hidden');
+    resultsSection.classList.add('hidden');
+    exportButton.disabled = true;
+    resultsBody.innerHTML = '';
+    summary.innerHTML = '';
+    deviceResults = [];
+    if (!projectInput.files.length) {
+      errorBox.textContent = 'チェッカー・CSV・logs が入った対象フォルダーを選択してください。';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    const files = fileMap(projectInput);
+    const names = new Set();
+    const logPattern = new RegExp(
+      '(?:^|/)logs/([^/]+)/(' + testIdPattern + ')\\.txt$',
+      'i'
+    );
+    for (const path of files.keys()) {
+      const match = path.replace(/\\/g, '/').match(logPattern);
+      if (match) names.add(match[1]);
+    }
+    const selectedNames = Array.from(names).sort();
+    if (selectedNames.length === 0) {
+      const hasLogFile = Array.from(files.keys()).some(path =>
+        new RegExp('(?:^|/)(' + testIdPattern + ')\\.txt$', 'i').test(path.replace(/\\/g, '/'))
+      );
+      errorBox.textContent = hasLogFile
+        ? 'logs フォルダーではなく、その親フォルダー（device-reference.csv と logs が入ったフォルダー）を選択してください。'
+        : '対象フォルダー内に logs/機器名/項番.txt のログがありません。ファイル名は 002-001.txt の形式です。';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    const button = document.getElementById('run-check');
+    button.disabled = true;
+    button.textContent = 'チェック中...';
+    try {
+      const expectedCsv = await textFile(findRootFile(files, 'device-reference.csv'));
+      const expectedByDevice = parseCsv(expectedCsv);
+      const configTemplate = await textFile(findRootFile(files, 'config-template.txt'));
+      deviceResults = [];
+      for (const name of selectedNames) {
+        deviceResults.push(await runDevice(name, files, expectedByDevice, configTemplate));
+      }
+      deviceResults.sort((left, right) => {
+        const rank = { FAIL: 0, 未設定: 1, PASS: 2 };
+        return rank[left.status] - rank[right.status] || left.name.localeCompare(right.name);
+      });
+      showSummary();
+      currentPage = 1;
+      render();
+      resultsSection.classList.remove('hidden');
+      exportButton.disabled = false;
+      resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      errorBox.textContent = 'チェックを実行できませんでした: ' + error.message;
+      errorBox.classList.remove('hidden');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'チェック実行';
+    }
+  });
+
+  resultsBody.addEventListener('click', event => {
+    const button = event.target.closest('.detail-toggle');
+    if (!button) return;
+    const row = document.getElementById(button.getAttribute('aria-controls'));
+    const expanded = button.getAttribute('aria-expanded') === 'true';
+    row.classList.toggle('hidden', expanded);
+    button.setAttribute('aria-expanded', String(!expanded));
+    button.textContent = expanded ? '項番を見る' : '閉じる';
+  });
+
+  searchInput.addEventListener('input', () => { currentPage = 1; render(); });
+  statusFilter.addEventListener('change', () => { currentPage = 1; render(); });
+  pageSizeInput.addEventListener('change', () => { currentPage = 1; render(); });
+  previousButton.addEventListener('click', () => { currentPage--; render(); });
+  nextButton.addEventListener('click', () => { currentPage++; render(); });
+
+  exportButton.addEventListener('click', () => {
+    const rows = [['機器名', '総合判定', '項番', '項番判定', '詳細']];
+    for (const device of deviceResults) {
+      for (const test of device.tests) rows.push([device.name, device.status, test.testId, test.status, test.detail]);
+    }
+    const csv = '\uFEFF' + rows.map(row =>
+      row.map(value => '"' + String(value).replace(/"/g, '""') + '"').join(',')
+    ).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'C9200CX_check_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+
+})();
+</script>
+</body>
+</html>

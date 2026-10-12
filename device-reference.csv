@@ -1,0 +1,2 @@
+﻿device_name,expected_pid,expected_serial,Hostname,ManagementIP,SubnetMask,DefaultGateway
+C9200CX-1,C9200CX-8P-2X2G,FOC2642L0AB,C9200CX-1,10.20.0.21,255.255.255.0,10.20.0.1

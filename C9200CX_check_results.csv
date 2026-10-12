@@ -1,0 +1,17 @@
+﻿"機器名","総合判定","項番","項番判定","詳細"
+"C9200CX-1","FAIL","002-001","PASS","項番とshowコマンドが一致 (show running-config)
+入力された設定行が running-config に存在します。"
+"C9200CX-1","FAIL","002-002","PASS","項番とshowコマンドが一致 (show startup-config)
+running-config と startup-config の設定本文が一致します。"
+"C9200CX-1","FAIL","003-002","PASS","項番とshowコマンドが一致 (show logging)
+ログに Error / Failed の表記はありません。"
+"C9200CX-1","FAIL","003-003","PASS","項番とshowコマンドが一致 (show inventory)
+PID: 期待値=C9200CX-8P-2X2G / 実際=C9200CX-8P-2X2G
+シリアル番号: 期待値=FOC2642L0AB / 実際=FOC2642L0AB"
+"C9200CX-1","FAIL","003-004","FAIL","項番とshowコマンドが一致 (show environment all)
+記載されている State / Status は正常値です。
+SYSTEM INLET の GREEN 表記がありません。
+SYSTEM HOTSPOT の GREEN 表記がありません。
+POWER 315W の記載がありません。"
+"C9200CX-1","FAIL","003-005","FAIL","項番とshowコマンドが一致 (show license all)
+Last ACK Received の項目がありません。"

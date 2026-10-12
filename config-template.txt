@@ -1,0 +1,7 @@
+hostname {{Hostname}}
+!
+interface Vlan20
+ ip address {{ManagementIP}} {{SubnetMask}}
+ no shutdown
+!
+ip default-gateway {{DefaultGateway}}
